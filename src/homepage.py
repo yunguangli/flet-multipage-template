@@ -1,10 +1,5 @@
 """
 homepage.py - Home page with welcome message and navigation
-
-This demonstrates:
-- Basic page layout with Flet controls
-- Navigation to other pages using page.go()
-- Accessing session data and singleton
 """
 
 import flet as ft
@@ -12,35 +7,19 @@ import flet as ft
 def HomePage(page: ft.Page):
     """
     Creates the homepage view
-    
-    Args:
-        page: The Flet page object containing session and navigation methods
-    
-    Returns:
-        ft.View: The homepage view with welcome message and navigation button
     """
-    
     # Access the shared singleton from session
-    shared_singleton = page.session.get("shared_singleton")
+    shared_singleton = page.session.store.get("shared_singleton")
     
-    def go_to_page1(e):
-        """
-        Navigation function - triggered when button is clicked
-        
-        Uses page.go() to navigate to a new route
-        The route_change handler in main.py will handle the actual navigation
-        """
-        print("Navigating to Page 1")
-        page.go("/page1")
+    async def go_to_page1(e):
+        """Navigation function"""
+        await page.push_route("/page1")
     
     def update_counter(e):
-        """
-        Demonstrates modifying the shared singleton
-        """
+        """Demonstrates modifying the shared singleton"""
         new_count = shared_singleton.increment_counter()
         counter_text.value = f"Shared Counter: {new_count}"
         
-        # Show feedback
         page.snack_bar = ft.SnackBar(
             content=ft.Text(f"Counter incremented to {new_count}!"),
             bgcolor=ft.Colors.GREEN_600
@@ -49,13 +28,14 @@ def HomePage(page: ft.Page):
         page.update()
     
     def show_session_info(e):
-        """
-        Demonstrates accessing and displaying session data
-        """
-        # Get app data from session
-        app_data = page.session.get("app_data") or {}
+        """Demonstrates accessing and displaying session data"""
+        app_data = page.session.store.get("app_data") or {}
         
-        # Create dialog with session info
+        # Define close handler first
+        def close_dialog(e):
+            session_info.open = False
+            page.update()
+        
         session_info = ft.AlertDialog(
             title=ft.Text("Session Information"),
             content=ft.Column([
@@ -64,11 +44,14 @@ def HomePage(page: ft.Page):
                 ft.Text(f"Singleton Config: {shared_singleton.get_config()}"),
             ], scroll=ft.ScrollMode.AUTO),
             actions=[
-                ft.TextButton("Close", on_click=lambda e: page.close(session_info))
+                ft.TextButton("Close", on_click=close_dialog)
             ]
         )
         
-        page.open(session_info)
+        # Show dialog using correct Flet 0.80.0 API
+        page.dialog = session_info
+        session_info.open = True
+        page.update()
     
     # Create UI controls
     title = ft.Text(
@@ -91,7 +74,6 @@ def HomePage(page: ft.Page):
         color=ft.Colors.GREEN_700
     )
     
-    # Create buttons
     buttons = ft.Row(
         [
             ft.ElevatedButton(
@@ -129,7 +111,6 @@ def HomePage(page: ft.Page):
         spacing=20
     )
     
-    # Features list
     features = ft.Column(
         [
             ft.ListTile(
@@ -155,11 +136,10 @@ def HomePage(page: ft.Page):
         ]
     )
     
-    # Create the view
+    # FIXED: Use keyword arguments for ft.View constructor
     view = ft.View(
-        "/",  # Route for this view
-        [
-            # App bar with title
+        route="/",
+        controls=[
             ft.AppBar(
                 title=ft.Text("Home", weight=ft.FontWeight.BOLD),
                 bgcolor=ft.Colors.BLUE_600,
@@ -167,11 +147,10 @@ def HomePage(page: ft.Page):
                 center_title=True
             ),
             
-            # Main content
             ft.Container(
                 content=ft.Column(
                     [
-                        ft.Container(height=40),  # Spacing
+                        ft.Container(height=40),
                         title,
                         subtitle,
                         ft.Container(height=40),
