@@ -1,118 +1,248 @@
 # Flet Multi-Page Routing Template
 
-A clean, well-documented skeleton for building multi-page applications with Flet.
+A starting point for multi-page apps built with **Flet 1.0**'s declarative
+component API: `ft.Router`, `ft.Route`, `@ft.component` and dataclass-based
+observable state.
 
-## Features
+## What it demonstrates
 
-1. **Simple Routing System**: Easy navigation between pages using routes
-2. **Session Management**: Share data between pages using `page.session`
-3. **Singleton Pattern**: Shared object instance accessible from all pages
-4. **Navigation History**: Track user navigation path
-5. **Page-Specific Data**: Store data specific to each page
-6. **Comprehensive Comments**: Detailed explanations for beginners
+| Idea | Flet 1.0 API |
+| --- | --- |
+| Routing | [`ft.Router`](https://flet.dev/docs/controls/router) + `ft.Route` |
+| Back navigation | `manage_views=True` + [`ft.View`](https://flet.dev/docs/controls/view) stack |
+| Shared state | `@ft.observable @dataclass` + `ft.create_context` / `ft.use_context` |
+| Page-scoped state | `ft.use_state` seeded from `page.session.store` |
+| Dialogs | `ft.use_dialog()` (declarative) and `page.show_dialog()` (one-shot snack bars) |
+| 404 handling | `ft.Router(not_found=...)` |
 
-## Project Structure
+## Project layout
 
+```
+src/
+├── main.py               # Entry point: page setup + the route table
+├── app_state.py          # Observable dataclasses, session-store accessors, hooks
+├── ui.py                 # Small shared presentation helpers
+├── assets/               # Icons and splash screens
+└── pages/
+    ├── __init__.py
+    ├── home.py           # "/"       — landing page
+    ├── page_one.py       # "/page-1" — page-scoped state
+    ├── page_two.py       # "/page-2" — shared-state dashboard
+    ├── page_three.py     # "/page-3" — session summary + reset
+    └── not_found.py      # anything else
+```
 
+## Getting started
 
+```bash
+# with uv
+uv sync
+uv run flet run src/main.py
 
-## How It Works
+# or plain pip
+pip install "flet[all]==1.0.3"
+cd src && python main.py
+```
 
-### 1. **Routing System**
-- `main.py` handles all route changes
-- Each route (`/`, `/page1`, `/page2`, `/page3`) maps to a different view
-- `page.go("/route")` triggers navigation
+`python main.py --web` serves it in a browser instead of a desktop window.
 
-### 2. **Session Data Management**
-- Use `page.session.set(key, value)` to store data
-- Use `page.session.get(key)` to retrieve data
-- Session data persists across page navigations
+## How it works
 
-### 3. **Singleton Object**
-- One instance shared across all pages
-- Can store application-wide data (DB connections, AI models, config)
-- Accessed via `page.session.get("shared_singleton")`
+### 1. One route table, no manual view juggling
 
-### 4. **Navigation Flow**
-- Home → Page 1 → Page 2 → Page 3
-- Each page has forward/backward navigation
-- Navigation history tracked in session
+`main()` configures the `Page` and hands everything else to a component:
 
-## Key Concepts for Beginners
+```python
+def main(page: ft.Page) -> None:
+    page.title = APP_TITLE
+    page.window.width = 1000
+    page.render_views(App)          # <- the component tree replaces page.views
+```
 
-### **Page Session (`page.session`)**
-- Dictionary-like storage attached to user's session
-- Perfect for storing temporary data
-- Cleared when browser closes (unless using server-side storage)
+`App` is a component that owns the session state and returns a `Router`:
 
-### **Views (`ft.View`)**
-- Each page is a `View` object
-- Contains all UI controls for that page
-- Has a route (e.g., `/page1`)
+```python
+@ft.component
+def App() -> ft.View:
+    state, _ = ft.use_state(get_app_state)
 
-### **Navigation**
-- `page.go("/route")`: Navigate to new page
-- `page.views.pop()`: Remove current view (back navigation)
-- App bar back buttons for intuitive navigation
+    return AppStateContext(
+        state,
+        lambda: ft.Router(
+            routes=[
+                ft.Route(
+                    component=home.Home,
+                    children=[
+                        ft.Route(path="page-1", component=page_one.PageOne),
+                        ft.Route(path="page-2", component=page_two.PageTwo),
+                        ft.Route(path="page-3", component=page_three.PageThree),
+                    ],
+                )
+            ],
+            not_found=not_found.NotFound,
+            manage_views=True,
+        ),
+    )
+```
 
-## How to Use This Template
+There is no `on_route_change` / `on_view_pop` handler to write: the Router
+subscribes to route changes and re-renders itself.
 
-1. **Install Flet** (if not already installed):
-   ```bash
-   pip install flet
+### 2. The pathless root route
 
-## Extending the Template
-Adding a New Page:
-Create newpage.py with a function that returns ft.View
+The outer `ft.Route` has no `path`, so it adds no URL segment, but it is always
+the first entry in the view stack. Every other page therefore has something to
+pop back to. It maps `/` to `home.Home` because `Home` is its only child that
+matches with nothing left over.
 
-Import it in main.py
+### 3. `manage_views=True` gives you back navigation for free
 
-Add route handler in route_change function
+The Router returns **one `View` per route level**, so navigating
+`/` → `/page-2` produces the stack `[Home, PageTwo]`. Flet then enables:
 
-Add navigation buttons in existing pages
+- the implicit `AppBar` back arrow (only the root opts out, with `can_pop=False`),
+- swipe-back on iOS,
+- the Android system back button,
+- browser Back/Forward.
 
-Modifying Singleton:
-Edit shared_singleton.py to add:
+`page.pop_views_until()` and manual `page.views.remove(...)` calls are *not*
+needed - and `pop_views_until()` does not work in component mode.
 
-Database connections
+### 4. Observable dataclasses instead of a singleton in a dict
 
-API clients
+```python
+@ft.observable
+@dataclass
+class AppState:
+    config: AppConfig = field(default_factory=AppConfig)
+    counter: int = 0
+    data_store: dict[str, str] = field(default_factory=dict)
+    navigation_history: list[str] = field(default_factory=lambda: ["/"])
+```
 
-Configuration settings
+`ft.observable` intercepts attribute writes and re-renders exactly the
+components that read the model. `list` and `dict` fields are wrapped
+automatically, so in-place mutations notify too. No `page.update()` calls, no
+manual invalidation.
 
-User authentication data
+`AppState` replaces the old "singleton class stashed in `page.session`" pattern
+with the same shared-instance semantics, but typed fields and automatic
+reactivity. Hang your own services off it (DB pool, HTTP client, current user).
 
-Storing User Data:
-Use page.session for:
+### 5. Context for app-wide state, session storage for page-scoped state
 
-User preferences
+Two different lifetimes, two different mechanisms:
 
-Form data
+```python
+# app-wide: one instance per session, handed down through context
+state = use_app_state()                      # use_context(), auto-subscribes
 
-Shopping cart items
+# page-scoped: one instance per session, seeded into component state
+draft = use_page_one_draft()                 # ft.use_state(get_page_one_draft)
+```
 
-Current workflow state
+Both models are cached in `page.session.store`, so code *outside* the component
+tree - a background task, a service, a page-level event handler - can reach the
+same objects via `get_app_state()` / `get_page_one_draft()`.
 
-Best Practices Demonstrated
-Separation of Concerns: Each page in its own file
+`reset_session()` clears the store and resets the models **in place**, so pages
+that already hold a reference show the cleared values immediately.
 
-State Management: Session for temporary, Singleton for shared
+### 6. Dialogs follow state
 
-Clean Navigation: Consistent forward/back buttons
+Real dialogs use the declarative hook; `show_info` is the single source of truth
+and rendering `None` hides the dialog:
 
-Error Prevention: Check for existing session data
+```python
+show_info, set_show_info = ft.use_state(False)
 
-Beginner-Friendly: Detailed comments and simple patterns
+ft.use_dialog(
+    _session_info_dialog(state, lambda: set_show_info(False)) if show_info else None
+)
+```
 
-Common Use Cases
-This template can be adapted for:
+Transient snack bars are one-shot notifications, so `ui.toast()` uses the
+imperative `page.show_dialog()` instead.
 
-E-commerce: Product pages, cart, checkout
+### 7. Side effects go in effects
 
-Dashboards: Multiple data views
+```python
+@ft.component
+def PageOne() -> ft.View:
+    draft = use_page_one_draft()
+    use_visit("/page-1")                       # history, once per mount
+    ft.use_effect(lambda: _count_visit(draft), [])   # visit counter, once per mount
+```
 
-Forms: Multi-step form wizards
+Both are wrapped in `ft.use_effect` so they run after the first render rather
+than on every re-render (a re-render happens on every keystroke in the text
+field).
 
-Educational Apps: Lessons, quizzes, progress tracking
+## Adding a page
 
-Admin Panels: Different management sections
+1. Create `src/pages/page_four.py` with an `@ft.component` that returns a `View`:
+
+   ```python
+   @ft.component
+   def PageFour() -> ft.View:
+       return view(
+           "/page-4", "Page 4", ACCENT,
+           *heading("Page 4", "Something new.", ACCENT),
+           can_pop=True,
+       )
+   ```
+
+2. Register it in `main.py`:
+
+   ```python
+   ft.Route(path="page-4", component=page_four.PageFour),
+   ```
+
+3. Add a navigation button on the page you want to reach it from:
+
+   ```python
+   accent_button("Page 4", ft.Icons.ARROW_FORWARD, ACCENT,
+                 lambda: ft.context.page.navigate("/page-4"))
+   ```
+
+For dynamic segments use `path="items/:item_id"` and read
+`ft.use_route_params()["item_id"]` in the component.
+
+## Reference examples
+
+The files at the repo root show the **imperative** alternative that Flet 1.0
+still supports - `page.views` manipulated by hand in `on_route_change`. Useful
+when porting an existing app, but the Router in `src/` is the recommended path.
+
+| File | Shows |
+| --- | --- |
+| `example1.py` | Manual `page.views` stack and `on_route_change` |
+| `example2.py` | `View.can_pop=False` + `on_confirm_pop` / `confirm_pop()` |
+| `example3.py` | Two-level nested routes (`/settings` → `/settings/mail`) |
+| `example4.py` | `NavigationDrawer` per view, synced to the current route |
+
+## Migrating from pre-1.0
+
+The API renames that bite first:
+
+| Pre-1.0 | Flet 1.0 |
+| --- | --- |
+| `page.go("/x")` | `page.navigate("/x")` (sync) or `await page.push_route("/x")` |
+| `page.pop_route()` | handled by the Router's view stack |
+| `ft.ElevatedButton` | `ft.Button` / `ft.FilledButton` / `ft.OutlinedButton` |
+| `ft.padding.all(30)` | `ft.Padding.all(30)` |
+| `ft.padding.symmetric(...)` | `ft.Padding.symmetric(...)` |
+| `page.window_width` | `page.window.width` |
+| `page.snack_bar = ...; page.update()` | `page.show_dialog(ft.SnackBar(...))` |
+| `page.open(dlg)` / `page.close(dlg)` | `page.show_dialog(dlg)` / `page.pop_dialog()` |
+| `TextField(border_color=...)` | `TextField(border=ft.OutlineInputBorder(...))` |
+| `page.on_route_change` + manual views | `page.render_views(App)` + `ft.Router` |
+| `ft.session.get(k)` | `page.session.store.get(k)` |
+
+Also note: `ft.Router`'s `not_found` component is called directly rather than
+mounted as a route component, so route hooks such as `ft.use_route_location()`
+are not available there - use `ft.context.page.route`.
+
+## License
+
+MIT

@@ -1,87 +1,73 @@
 """
-main.py - Main application entry point and router
+main.py - Entry point, page setup and the route table.
+
+Flet 1.0 renders this app through the *component* API. ``main()`` only configures
+the ``Page``; everything the user sees comes from the ``App`` component, which is
+a ``ft.Router`` plus a tree of ``ft.Route`` definitions. There is no manual
+``page.views.append(...)`` / ``on_route_change`` bookkeeping any more.
+
+Run with::
+
+    python main.py          # desktop app
+    python main.py --web    # browser
 """
 
 import flet as ft
-from shared_singleton import SharedSingleton
-from homepage import HomePage
-from page1 import Page1
-from page2 import Page2
-from page3 import Page3
 
-def main(page: ft.Page):
+from app_state import AppStateContext, get_app_state
+from pages import home, not_found, page_one, page_three, page_two
+
+APP_TITLE = "Flet Multi-Page Template"
+
+
+@ft.component
+def App() -> ft.View:
+    """Root component: owns the session state and renders the route table.
+
+    ``ft.use_state`` is passed the *getter*, not an instance, so the model is
+    created once - on the first render - and then kept for the lifetime of this
+    component, which is the lifetime of the user session.
     """
-    Main application entry point
-    Sets up the page properties and handles routing between views
-    """
-    # Configure page properties
-    page.title = "Flet Routing Template"
+    state, _ = ft.use_state(get_app_state)
+
+    # Everything created inside the provider callback - the Router and every
+    # Route component below it - can call `use_app_state()`.
+    return AppStateContext(
+        state,
+        lambda: ft.Router(
+            routes=[
+                # A pathless root route adds no URL segment but always sits at
+                # the bottom of the view stack, giving every other page
+                # something to pop back to.
+                ft.Route(
+                    component=home.Home,
+                    children=[
+                        ft.Route(path="page-1", component=page_one.PageOne),
+                        ft.Route(path="page-2", component=page_two.PageTwo),
+                        ft.Route(path="page-3", component=page_three.PageThree),
+                    ],
+                )
+            ],
+            not_found=not_found.NotFound,
+            # Emit one View per route level instead of a single control tree.
+            # This is what enables the app bar back arrow, swipe-back on mobile
+            # and the system back button - all handled by Flet, no code.
+            manage_views=True,
+        ),
+    )
+
+
+def main(page: ft.Page) -> None:
+    """Flet entry point. Runs once per user session."""
+    page.title = APP_TITLE
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.window_width = 1000
-    page.window_height = 700
+    page.theme = ft.Theme(color_scheme_seed=ft.Colors.BLUE)
     page.padding = 0
-    
-    # Initialize shared singleton and store in page session
-    if not page.session.store.get("shared_singleton"):
-        page.session.store.set("shared_singleton", SharedSingleton())
-    
-    # Initialize session data for our app
-    if not page.session.store.get("app_data"):
-        page.session.store.set("app_data", {
-            "user_preferences": {},
-            "navigation_history": ["/"],
-            "page_data": {}
-        })
-    
-    def route_change():
-        """
-        Handles navigation between different pages/views
-        """
-        page.views.clear()
-        
-        # Always add homepage as base view
-        homepage_view = HomePage(page)
-        page.views.append(homepage_view)
-        
-        # Add additional views based on route
-        if page.route == "/page1":
-            page.views.append(Page1(page))
-        elif page.route == "/page2":
-            page.views.append(Page2(page))
-        elif page.route == "/page3":
-            page.views.append(Page3(page))
-        elif page.route != "/":  # Unknown route
-            page.route = "/"
-            route_change()
-            return
-        
-        # Update navigation history in session
-        app_data = page.session.store.get("app_data") or {}
-        nav_history = app_data.get("navigation_history", [])
-        if page.route not in nav_history:
-            nav_history.append(page.route)
-            app_data["navigation_history"] = nav_history
-            page.session.store.set("app_data", app_data)
-        
-        page.update()
-    
-    async def view_pop(e):
-        """
-        Handles back navigation when user clicks back button
-        """
-        if e.view is not None and len(page.views) > 1:
-            page.views.remove(e.view)
-            top_view = page.views[-1]
-            await page.push_route(top_view.route)
-    
-    # Register event handlers for routing
-    page.route = "/"
-    page.on_route_change = route_change
-    page.on_view_pop = view_pop
-    
-    # Initial route setup
-    route_change()
+    page.window.width = 1000
+    page.window.height = 700
 
-# Entry point - runs when script is executed directly
+    page.render_views(App)
+
+
 if __name__ == "__main__":
     ft.run(main)

@@ -1,14 +1,14 @@
 [project]
 name = "flet-multipage"
-version = "0.1.0"
-description = ""
+version = "1.0.0"
+description = "A multi-page routing template built on Flet 1.0's declarative component API."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     { name = "Flet developer", email = "you@example.com" }
 ]
 dependencies = [
-  "flet==0.28.3"
+  "flet==1.0.3"
 ]
 
 [tool.flet]
@@ -27,15 +27,16 @@ company = "Flet"
 copyright = "Copyright (C) 2025 by Flet"
 
 [tool.flet.app]
+# The module holding `main(page)`. Run from here so that "assets/" resolves.
 path = "src"
 
 [tool.uv]
 dev-dependencies = [
-    "flet[all]==0.28.3",
+    "flet[all]==1.0.3",
 ]
 
 [tool.poetry]
 package-mode = false
 
 [tool.poetry.group.dev.dependencies]
-flet = {extras = ["all"], version = "0.28.3"}
+flet = {extras = ["all"], version = "1.0.3"}

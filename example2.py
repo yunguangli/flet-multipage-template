@@ -1,80 +1,91 @@
+"""
+example2.py - Intercepting back navigation with `View.on_confirm_pop`.
+
+A view with `can_pop=False` is asked for permission before it is popped: Flet
+fires the view's `on_confirm_pop` handler, and the view answers with
+`confirm_pop(True/False)`. If no answer arrives before the frontend timeout,
+the pop is cancelled.
+
+Run:  python example2.py
+"""
+
 import flet as ft
 
 
-def main(page: ft.Page):
-    page.title = "Routes Example"
+class HomeView(ft.View):
+    def __init__(self):
+        super().__init__(
+            route="/",
+            can_pop=False,
+            on_confirm_pop=self.ask_to_leave,
+            appbar=ft.AppBar(title=ft.Text("Home")),
+            controls=[
+                ft.Text("Home page"),
+                ft.Button(
+                    "Go to store",
+                    icon=ft.Icons.STORE,
+                    on_click=lambda: self.page.navigate("/store"),
+                ),
+            ],
+        )
 
-    def route_change():
+    async def ask_to_leave(self, e: ft.ControlEvent):
+        async def on_yes(e: ft.ControlEvent):
+            self.page.pop_dialog()
+            await self.confirm_pop(True)
+
+        async def on_no(e: ft.ControlEvent):
+            self.page.pop_dialog()
+            await self.confirm_pop(False)
+
+        self.page.show_dialog(
+            ft.AlertDialog(
+                title=ft.Text("Please confirm"),
+                content=ft.Text("Leave this page?"),
+                actions=[
+                    ft.Button("Yes", on_click=on_yes),
+                    ft.TextButton("No", on_click=on_no),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+        )
+
+
+class StoreView(ft.View):
+    def __init__(self):
+        super().__init__(
+            route="/store",
+            appbar=ft.AppBar(title=ft.Text("Store")),
+            controls=[
+                ft.Text("Store page"),
+                ft.Button(
+                    "Go home",
+                    icon=ft.Icons.HOME,
+                    on_click=lambda: self.page.navigate("/"),
+                ),
+            ],
+        )
+
+
+def main(page: ft.Page):
+    page.title = "Confirm pop example"
+
+    def route_change(e: ft.RouteChangeEvent):
         page.views.clear()
-        page.views.append(MainView("/"))
+        page.views.append(HomeView())
         if page.route == "/store":
-            page.views.append(PermissionView("/store"))
+            page.views.append(StoreView())
         page.update()
 
     async def view_pop(e: ft.ViewPopEvent):
-        if e.view is not None:
-            print("View pop:", e.view)
+        if e.view is not None and len(page.views) > 1:
             page.views.remove(e.view)
-            top_view = page.views[-1]
-            await page.push_route(top_view.route)
+            await page.push_route(page.views[-1].route)
 
     page.on_route_change = route_change
     page.on_view_pop = view_pop
 
-    route_change()
-
-
-class MainView(ft.View):
-    def __init__(self, path):
-        super().__init__(
-            route=path,
-            appbar=ft.AppBar(title=ft.Text("Flet app")),
-            controls=[
-                ft.Button("Go to store", on_click=self.open_store),
-            ],
-        )
-
-    async def open_store(self, e):
-        await self.page.push_route("/store")
-
-
-class PermissionView(ft.View):
-    def __init__(self, path):
-        super().__init__(
-            route=path,
-            appbar=ft.AppBar(title=ft.Text(f"{path} View")),
-            can_pop=False,
-            on_confirm_pop=self.ask_pop_permission,
-        )
-
-    async def ask_pop_permission(self, e):
-        async def on_dlg_yes(e):
-            self.page.pop_dialog()
-            await self.confirm_pop(True)
-
-        async def on_dlg_no(e):
-            self.page.pop_dialog()
-            await self.confirm_pop(False)
-
-        dlg_modal = ft.AlertDialog(
-            title=ft.Text("Please confirm"),
-            content=ft.Text("Go home?"),
-            actions=[
-                ft.TextButton(
-                    "Yes",
-                    on_click=on_dlg_yes,
-                ),
-                ft.TextButton(
-                    "No",
-                    on_click=on_dlg_no,
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-            on_dismiss=lambda e: print("Modal dialog dismissed!"),
-        )
-
-        self.page.show_dialog(dlg_modal)
-        # await self.confirm_pop(True)
+    route_change(ft.RouteChangeEvent(name="", control=page, route=page.route))
 
 
 if __name__ == "__main__":
